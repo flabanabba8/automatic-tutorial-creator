@@ -17,6 +17,10 @@ active Hermes profile. No Windows/native-Wayland support claim.
 - Native computer-use dispatch fixture: a denied action stays denied, host context
   is forwarded, a successful action gets a fresh observation, and the returned
   observation still requires review. This is not a live desktop-control test.
+- Additional private Katz, podcast and video rehearsals were captured and
+  exported on isolated X11 displays with no host audio selected. Sampled frames
+  were inspected; this did not exercise live Hermes computer-use actions or
+  constitute complete visual or listening review.
 - Local HTTP TTS fixture: requests, WAV duration checks, audio mixing/ducking,
   timed segment SRT, cache reuse and overrun rejection.
 - Real local Higgs TTS3 at revision239f63fb7b02b1aa085f98d9efae5e35cc5523e8:
