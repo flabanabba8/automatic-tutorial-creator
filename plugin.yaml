@@ -1,0 +1,42 @@
+name: automatic-tutorial-creator
+version: "0.1.0"
+description: "Record a selected X11 window, mark demonstration steps, and export a checked video under 90 seconds."
+author: "Automatic Tutorial Creator contributors"
+license: GPL-3.0-or-later
+requires_hermes: ">=0.22.0"
+provides_tools:
+  - capture_sources
+  - capture_start
+  - capture_status
+  - capture_mark
+  - capture_stop
+  - capture_export
+  - tutorial_timeline
+  - tutorial_narrate
+  - tutorial_step
+  - tutorial_frame
+config_schema:
+  higgs_url:
+    type: str
+    default: "http://localhost:8000"
+    description: "Origin of your already-running loopback Higgs TTS3 server."
+  higgs_model:
+    type: str
+    default: "bosonai/higgs-tts-3-4b"
+    description: "Model identifier served by your local Higgs endpoint."
+  higgs_voice:
+    type: str
+    default: "default"
+    description: "Local server voice identifier."
+  higgs_revision:
+    type: str
+    default: ""
+    description: "Model revision; change this when replacing the server's weights to invalidate cached narration."
+  higgs_reference_audio:
+    type: str
+    default: ""
+    description: "Optional local voice-reference WAV/FLAC/MP3 you have rights to use; must also be allowed by your Higgs server."
+  higgs_reference_text:
+    type: str
+    default: ""
+    description: "Transcript of the optional voice reference."
