@@ -27,7 +27,7 @@ see VERIFICATION.md for tested scope and remaining checks.
    the local Higgs adapter does not claim word-level alignment.
 
 `tutorial_step` invokes one `computer_use` action through Hermes's public dispatch,
-after recapturing the exact recorded window in the same Hermes session and X11 display, then returns a fresh capture. Host approvals remain in force, and denied actions are returned without claiming success. Supply the recording window ID in `observe`. Element-index actions are not supported after recapture; use coordinates from a fresh observation. Run computer-use calls sequentially: the host target is sticky and the preflight plus action are not atomic. The model must inspect the resulting state before narrating success.
+after recapturing the exact recorded window in the same Hermes session and X11 display, then returns a fresh capture. Host approvals remain in force, and denied actions are returned without claiming success. Supply the recording window ID in `observe`. Element-index actions are not supported after recapture; use coordinates from a fresh observation. The plugin rejects overlapping tutorial steps in its own process. Coordinate other computer-use calls and processes separately: the host target is sticky and the preflight plus action are not atomic. The model must inspect the resulting state before narrating success.
 The step label records an attempt, not an independently verified UI outcome.
 
 Keep the window visible and uncovered: X11 capture is not an occlusion-safe GPU

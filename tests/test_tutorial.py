@@ -75,6 +75,14 @@ class Boundaries(unittest.TestCase):
                 loopback.LoopbackConnection('localhost', 80, timeout=1).connect()
         create.assert_not_called()
 
+    def test_overlapping_tutorial_steps_do_not_capture_or_act(self):
+        ctx, director = Mock(), Mock()
+        with package._step_lock:
+            with self.assertRaisesRegex(RuntimeError, 'step is in progress'):
+                package.step(ctx, director, 'id', 'Click', {'action': 'click'}, {'app': 'Demo', 'window_id': 123}, session_id='fixture-session')
+        ctx.dispatch_tool.assert_not_called()
+        director.job.assert_not_called()
+
     def test_native_computer_use_keeps_denial_and_context(self):
         with tempfile.TemporaryDirectory(dir='/tmp') as tmp, patch.dict('os.environ', {'DISPLAY': ':7'}):
             Path(tmp, 'request.json').write_text(json.dumps({'display': ':7', 'window_id': 123}))

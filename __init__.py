@@ -1,10 +1,13 @@
 """Hermes tools for controlled local demonstration recording."""
 import json
 import os
+import threading
 from pathlib import Path
 from .core import Director, sources
 from .narration import narrate
 
+
+_step_lock = threading.Lock()
 
 TOOLS = {
     'capture_sources': ('List local X11 windows and application audio streams. Native Wayland windows are not supported.', {
@@ -55,6 +58,15 @@ def invoke(name, args, ctx=None, **kwargs):
 
 
 def step(ctx, director, job_id, label, action, observe, **kwargs):
+    if not _step_lock.acquire(blocking=False):
+        raise RuntimeError('Another tutorial step is in progress; wait for it to finish')
+    try:
+        return _step(ctx, director, job_id, label, action, observe, **kwargs)
+    finally:
+        _step_lock.release()
+
+
+def _step(ctx, director, job_id, label, action, observe, **kwargs):
     if not isinstance(action, dict) or action.get('action') not in {'click', 'double_click', 'right_click', 'middle_click', 'drag', 'scroll', 'type', 'key', 'wait'}:
         raise ValueError('Choose one supported computer-use action')
     if any(action.get(k) is not None for k in ('element', 'from_element', 'to_element')):
