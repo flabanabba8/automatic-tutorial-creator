@@ -17,7 +17,7 @@ class ReferenceTests(unittest.TestCase):
             external = base/'reference.wav'
             external.write_bytes(b'fixture')
             self.assertEqual(core.resolve_reference(str(external), plugin), external)
-            private = base/'.codex'
+            private = base/'.CoDeX'
             private.mkdir()
             secret = private/'reference.wav'
             secret.write_bytes(b'fixture')

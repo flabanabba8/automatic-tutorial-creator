@@ -5,6 +5,8 @@ active Hermes profile. No Windows/native-Wayland support claim.
 
 ## Passed
 
+- Mixed-case protected-directory fixtures passed on Linux; no real credentials were used. This is not a full platform or publication audit.
+
 - Catalog validation for the capture/timeline/narration/computer-use tool package:
   manifest, isolated registration, declared tools, security and no core overrides.
 - Real isolated Xvfb application capture using original animated video and a sine
