@@ -35,6 +35,16 @@ def voice_fixture():
 
 
 class Boundaries(unittest.TestCase):
+    def test_narration_reads_keyed_config(self):
+        class Context:
+            def __init__(self): self.keys = []
+            def get_config(self, key): self.keys.append(key); return {'higgs_model': 'fixture-model'}.get(key)
+        ctx = Context()
+        with patch('plugins.plugin_storage.plugin_data_dir', return_value=Path('/tmp/fixture')), patch.object(package, 'narrate', return_value={}) as narrate_call:
+            result = json.loads(package.invoke('tutorial_narrate', {'job_id': 'fixture'}, ctx))
+        self.assertEqual(result, {})
+        self.assertEqual(narrate_call.call_args.kwargs['settings'], {'higgs_model': 'fixture-model'})
+
     def test_unsupported_platform_reports_linux_before_capture(self):
         with tempfile.TemporaryDirectory(dir='/tmp') as tmp, patch.object(package.core.sys,'platform','win32'):
             with self.assertRaisesRegex(ValueError,'requires Linux'):package.core.sources()

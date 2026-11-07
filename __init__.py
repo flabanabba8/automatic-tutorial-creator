@@ -45,7 +45,9 @@ def invoke(name, args, ctx=None, **kwargs):
         if name == 'capture_sources':
             result = sources(**args)
         elif name == 'tutorial_narrate':
-            result = narrate(plugin_data_dir('automatic-tutorial-creator'), **args, settings=ctx.get_config() or {})
+            keys = ('higgs_url', 'higgs_model', 'higgs_voice', 'higgs_revision', 'higgs_reference_audio', 'higgs_reference_text')
+            settings = {key: value for key in keys if (value := ctx.get_config(key)) is not None}
+            result = narrate(plugin_data_dir('automatic-tutorial-creator'), **args, settings=settings)
         elif name == 'tutorial_step':
             return step(ctx, Director(plugin_data_dir('automatic-tutorial-creator')), **args, **kwargs)
         else:

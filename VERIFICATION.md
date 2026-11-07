@@ -1,5 +1,7 @@
 # Automatic Tutorial Creator verification
 
+- Narration reads its declared Higgs settings through Hermes's keyed `get_config` interface. A strict-context regression checks forwarding without starting a model or contacting a service.
+
 Development checks on2026-11-05. Nothing published or installed into a user's
 active Hermes profile. No Windows/native-Wayland support claim.
 
