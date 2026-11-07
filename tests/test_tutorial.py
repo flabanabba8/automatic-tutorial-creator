@@ -35,6 +35,11 @@ def voice_fixture():
 
 
 class Boundaries(unittest.TestCase):
+    def test_unsupported_platform_reports_linux_before_capture(self):
+        with tempfile.TemporaryDirectory(dir='/tmp') as tmp, patch.object(package.core.sys,'platform','win32'):
+            with self.assertRaisesRegex(ValueError,'requires Linux'):package.core.sources()
+            with self.assertRaisesRegex(ValueError,'requires Linux'):Director(Path(tmp)/'out').start(123)
+
     def test_invalid_numbers_and_remote_display(self):
         for value in [True, float('nan'), float('inf'), -1, '3']:
             with self.assertRaises(ValueError): number(value, 0, 89, 'duration')

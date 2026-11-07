@@ -78,6 +78,7 @@ def window_info(display, window_id):
 
 
 def sources(display=None):
+    if sys.platform != 'linux': raise ValueError('Window capture requires Linux X11/XWayland')
     display = local_display(display or os.environ.get('DISPLAY', ''))
     listing = run(['xwininfo', '-display', display, '-root', '-tree'])
     windows = []
@@ -114,6 +115,7 @@ class Director:
         return path
 
     def start(self, window_id, display=None, max_seconds=180, audio_stream=None):
+        if sys.platform != 'linux': raise ValueError('Window capture requires Linux X11/XWayland')
         max_seconds = number(max_seconds, 1, 600, 'max_seconds')
         for binary in ['ffmpeg', 'ffprobe', 'xwininfo']:
             if not shutil.which(binary):

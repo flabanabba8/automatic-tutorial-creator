@@ -23,6 +23,9 @@ active Hermes profile. No Windows/native-Wayland support claim.
   exported on isolated X11 displays with no host audio selected. Sampled frames
   were inspected; this did not exercise live Hermes computer-use actions or
   constitute complete visual or listening review.
+- Native Windows Python 3.14 loaded the plugin and confirmed window discovery
+  and recording report their Linux X11/XWayland requirement before invoking any
+  desktop command. This does not implement or test Windows capture.
 - Local HTTP TTS fixture: requests, WAV duration checks, audio mixing/ducking,
   timed segment SRT, cache reuse and overrun rejection.
 - Real local Higgs TTS3 at revision239f63fb7b02b1aa085f98d9efae5e35cc5523e8:
@@ -46,7 +49,8 @@ active Hermes profile. No Windows/native-Wayland support claim.
 - Subjective narration quality and more voices/languages. One short synthesis is
   not a guarantee against dropped/repeated words; captions are not word-aligned.
 - Native Wayland and Windows capture. The existing Windows recorder is a research
-  foundation, not a shipped or tested backend. Legion Go access is unresolved.
+  foundation, not a shipped or tested backend. The Legion Go was reachable for
+  the unsupported-path check above.
 - Interruptions by power loss/SIGKILL can leave an MKV and require audio-route
   recovery. Graceful stop is covered; hard-kill recovery is not automated.
 - Public content/history audit, install documentation review, demo publication,
