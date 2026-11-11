@@ -26,6 +26,64 @@ def run(argv, timeout=15):
     return result.stdout
 
 
+def clean_export_name(name):
+    """Accept the export file name, its full path, or the name without .mp4; return the canonical file name."""
+    if isinstance(name, str):
+        base = Path(name).name
+        if re.fullmatch(r'export-[a-f0-9]{32}', base): base += '.mp4'
+        return base
+    return name
+
+
+def window_pid(display, window_id):
+    """Process ID that owns an X11 window (_NET_WM_PID), or None when it is not advertised."""
+    local_display(display)
+    try:
+        match = re.search(r'=\s*(\d+)', run(['xprop', '-display', display, '-id', str(int(window_id)), '_NET_WM_PID']))
+    except (RuntimeError, OSError, ValueError, subprocess.SubprocessError):
+        return None
+    return int(match[1]) if match and int(match[1]) > 0 else None
+
+
+def raise_window(display, window_id):
+    """Best effort: bring the selected window above overlapping windows. Without a compositor
+    X11 returns black for covered parts of a window, so the take would record black frames."""
+    exe = shutil.which('xdotool')
+    if not exe:
+        return False
+    try:
+        run([exe, 'windowraise', str(int(window_id))], timeout=5)
+    except (RuntimeError, OSError, ValueError, subprocess.SubprocessError):
+        return False
+    return True
+
+
+def window_title(display, window_id):
+    local_display(display)
+    try:
+        match = re.search(r'Window id: \S+ "(.*)"', run(['xwininfo', '-display', display, '-id', str(int(window_id))]))
+    except (RuntimeError, OSError, ValueError, IndexError, subprocess.SubprocessError):
+        return ''
+    return match[1] if match else ''
+
+
+def is_spreadsheet_grid(display, window_id):
+    """LibreOffice Calc: Hermes computer-use `type` makes soffice grow without bound there (known limit)."""
+    return 'libreoffice calc' in window_title(display, window_id).casefold()
+
+
+def set_clipboard(display, text):
+    """Put plain text on the X11 clipboard of the recorded display with xclip."""
+    local_display(display)
+    exe = shutil.which('xclip')
+    if not exe:
+        raise ValueError('Typing into a spreadsheet grid is refused (it can exhaust memory); install xclip so the plugin can paste instead, or enter the data with single key actions')
+    if not isinstance(text, str) or not text or len(text) > 2000 or any(ord(c) < 32 and c not in '\n\t' for c in text):
+        raise ValueError('Paste text must be 1-2000 characters of plain text')
+    subprocess.run([exe, '-selection', 'clipboard', '-i'], input=text.encode(), check=True, timeout=10,
+                   env={**process_env(), 'DISPLAY': display}, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
 def number(value, low, high, name):
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise ValueError(f"{name} must be a number")
@@ -56,8 +114,10 @@ def local_display(display):
     return display
 
 
-def window_info(display, window_id):
+def window_info(display, window_id, capture_mode='window'):
     local_display(display)
+    if capture_mode not in ('window', 'window_region'):
+        raise ValueError('Choose window or window_region capture')
     if isinstance(window_id, str) and re.fullmatch(r'0x[0-9a-fA-F]+', window_id):
         window_id = int(window_id, 16)
     number(window_id, 1, 2**32 - 1, 'window_id')
@@ -74,7 +134,37 @@ def window_info(display, window_id):
     root_id = re.search(r'Window id:\s+(0x[0-9a-fA-F]+)', root).group(1)
     if int(root_id, 16) == int(window_id):
         raise ValueError('Desktop/root capture is not supported; select an application window')
-    return {'window_id': int(window_id), 'width': width, 'height': height, 'display': display}
+    result = {'window_id': int(window_id), 'width': width, 'height': height, 'display': display}
+    if capture_mode == 'window_region':
+        x = re.search(r'Absolute upper-left X:\s+(-?\d+)', info)
+        y = re.search(r'Absolute upper-left Y:\s+(-?\d+)', info)
+        rw = re.search(r'Width:\s+(\d+)', root)
+        rh = re.search(r'Height:\s+(\d+)', root)
+        if not all((x, y, rw, rh)):
+            raise ValueError('Window screen bounds are unavailable')
+        left, top = int(x[1]), int(y[1])
+        if left < 0 or top < 0 or left + width > int(rw[1]) or top + height > int(rh[1]):
+            raise ValueError('Window region must be fully on screen')
+        result.update(left=left, top=top)
+    return result
+
+
+def capture_input(request):
+    """FFmpeg input for a selected drawable or its explicit fixed screen region."""
+    mode = request.get('capture_mode', 'window')
+    cursor = request.get('show_cursor', False)
+    if type(cursor) is not bool:
+        raise ValueError('show_cursor must be a boolean')
+    display = local_display(request['display'])
+    args = ['-f', 'x11grab', '-draw_mouse', '1' if cursor else '0', '-framerate', '30',
+            '-video_size', f"{request['width']}x{request['height']}"]
+    if mode == 'window':
+        return args + ['-window_id', str(request['window_id']), '-i', display]
+    if mode != 'window_region':
+        raise ValueError('Choose window or window_region capture')
+    if any(type(request.get(k)) is not int or request[k] < 0 for k in ('left', 'top')):
+        raise ValueError('Window region needs validated screen coordinates')
+    return args + ['-i', f"{display}+{request['left']},{request['top']}"]
 
 
 def sources(display=None):
@@ -114,19 +204,25 @@ class Director:
             raise ValueError('Recording does not exist')
         return path
 
-    def start(self, window_id, display=None, max_seconds=180, audio_stream=None):
+    def start(self, window_id, display=None, max_seconds=180, audio_stream=None,
+              capture_mode='window', show_cursor=False):
         if sys.platform != 'linux': raise ValueError('Window capture requires Linux X11/XWayland')
-        max_seconds = number(max_seconds, 1, 600, 'max_seconds')
+        max_seconds = number(max_seconds, 1, 1800, 'max_seconds')
         for binary in ['ffmpeg', 'ffprobe', 'xwininfo']:
             if not shutil.which(binary):
                 raise ValueError(f'Install {binary} before recording')
-        source = window_info(display or os.environ.get('DISPLAY', ''), window_id)
+        if type(show_cursor) is not bool:
+            raise ValueError('show_cursor must be a boolean')
+        source = window_info(display or os.environ.get('DISPLAY', ''), window_id, capture_mode)
+        source.update(capture_mode=capture_mode, show_cursor=show_cursor)
         if audio_stream is not None:
             number(audio_stream, 0, 2**32 - 1, 'audio_stream')
             if int(audio_stream) != audio_stream:
                 raise ValueError('audio_stream must be an integer')
             if not shutil.which('pactl'):
                 raise ValueError('pactl is required for application audio')
+        local_display(source['display'])
+        raise_window(source['display'], source['window_id'])
         job_id = uuid.uuid4().hex
         folder = self.root / job_id
         folder.mkdir(mode=0o700)
@@ -240,13 +336,14 @@ class Director:
         except Exception:
             out.unlink(missing_ok=True)
             raise
-        receipt = {'path': str(out), 'seconds': actual, 'bytes': out.stat().st_size,
+        receipt = {'path': str(out), 'export_name': out.name, 'seconds': actual, 'bytes': out.stat().st_size,
                    'audio': has_audio, 'segments': segments, 'decoded': True,
                    'estimated_upload_seconds_at_93_KiB_s': round(out.stat().st_size / (93 * 1024), 1)}
         write_json(out.with_suffix('.json'), receipt)
         return receipt
 
     def timeline(self, job_id, export_name=None):
+        export_name = clean_export_name(export_name)
         state = self.status(job_id)
         if export_name is None:
             return {'clock': 'recording media seconds', 'state': state['state'], 'seconds': state['media_seconds'], 'steps': state['marks']}
@@ -268,6 +365,7 @@ class Director:
                 'precision': 'Markers use approximately0.5-second progress updates; cut boundaries are quantized to video frames.'}
 
     def frame(self, job_id, export_name, seconds):
+        export_name = clean_export_name(export_name)
         timeline = self.timeline(job_id, export_name)
         number(seconds, 0, max(0, timeline['seconds'] - .05), 'frame time')
         folder = self.job(job_id)

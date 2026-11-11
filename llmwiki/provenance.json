@@ -1,0 +1,108 @@
+{
+  "curated": "2026-11-10",
+  "status": "source-derived, not a new live verification",
+  "sources": [
+    {
+      "package_path": "README.md",
+      "sha256": "f82e159f5b26c2bf72d62ffe2d7b9024286d01f9eec88f77b55ba780a392d4ba"
+    },
+    {
+      "package_path": "VERIFICATION.md",
+      "sha256": "1b7b6046f742be29afc2f1e0f81faa6402772a3d8a026cd027ea75e0cc7c1706"
+    },
+    {
+      "package_path": "__init__.py",
+      "sha256": "ae23bbb899c4fc1bbe140ea28e777d70fa1627e507def1c164cb9275ac828ff6"
+    },
+    {
+      "package_path": "core.py",
+      "sha256": "f385763fe58497e4aceb8a9a0e6a1b1baddbbead0dfc13c9b3cc3640f285b466"
+    },
+    {
+      "package_path": "host_speech.py",
+      "sha256": "abb9a06a1fbc3a3cd1e500e178ae1c6e5962f3be7caa92041815fd5eb31990e7"
+    },
+    {
+      "package_path": "loopback.py",
+      "sha256": "9b15147744b87c327206a21acf0bfc6958dd5d71b1daaa0185ed3a3acc147042"
+    },
+    {
+      "package_path": "narration.py",
+      "sha256": "08dc1ba1fe62e04bb96b3fbfaed3d2f2015f4d55278bf19241e5a4aadde31bf7"
+    },
+    {
+      "package_path": "plugin.yaml",
+      "sha256": "b9ea6d194d94be5a50e99ecf637ebd2856c0009faae4378971986931eaca4c0e"
+    },
+    {
+      "package_path": "process_env.py",
+      "sha256": "f8fcf92fbb4cd83ebaaa89b42b240709a0619d4f380cce82dd4f8ff42bcdfafa"
+    },
+    {
+      "package_path": "reference_paths.py",
+      "sha256": "bbe697d88587fcf567f2579dd0b6e0dfb34e25d5b46d8b5cc077a7b5eb57bfef"
+    },
+    {
+      "package_path": "skills/create-tutorial/SKILL.md",
+      "sha256": "dc276aa697444c330a684c672f378fbc64dbe050391c3493a97903188d2e9e0c"
+    },
+    {
+      "package_path": "tests/test_capture.py",
+      "sha256": "6154eff776b4affdd0cbaf53e56394e91270290936dac433654981d15ea4c3a3"
+    },
+    {
+      "package_path": "tests/test_host_narration.py",
+      "sha256": "75b4d3e0168a796fdfdfb56a431d83912900c6dd04bbf449fba119a0442028c7"
+    },
+    {
+      "package_path": "tests/test_reference_paths.py",
+      "sha256": "3089c1194bb9dd7ea13167191bca87f966993e835f085ef8900bfe7d552f0a01"
+    },
+    {
+      "package_path": "tests/test_tutorial.py",
+      "sha256": "50c5a6d9d3636cce16115a5affb63ca606246caa60b586942ed62ceeada8322f"
+    },
+    {
+      "package_path": "tests/test_window_region.py",
+      "sha256": "9592e04ffeb13b379a4a4e8b717b8450ce4e743aefc919546e24d44af4692f75"
+    },
+    {
+      "package_path": "worker.py",
+      "sha256": "2f57622ecc4d89fa097fb3400710513cd91d40ed73cd053e3980898e446ab0c7"
+    }
+  ],
+  "credentials_or_private_installations_read": false,
+  "quality_review": {
+    "date": "2026-11-09",
+    "method": "main-session source review; schema registration only, no business handlers or new live tests",
+    "references": [
+      {
+        "package_path": "README.md",
+        "sha256": "dfc5bccea2d0afdda01afc2b54f9d33ef090ea1124105d4986846b3fe3c32b13"
+      },
+      {
+        "package_path": "plugin.yaml",
+        "sha256": "51fa142c4ce3ecd161a8aab5f2a4e5edea0edf1d6d680095b84f70099929bae5"
+      },
+      {
+        "package_path": "llmwiki/task-guide.md",
+        "sha256": "fb673e6d49fc8776524c5ff5728da2119614805fa194a7b5417b699890db6bcb"
+      },
+      {
+        "package_path": "llmwiki/contracts.json",
+        "sha256": "bff68b6c7f20fe09a300d996120cd703455bced6b098561f5f7778f6a0920998"
+      }
+    ],
+    "scope": [
+      "setup decisions",
+      "worked task flow",
+      "failure diagnosis",
+      "acceptance limits",
+      "actual tool schema alignment",
+      "startup discovery",
+      "local reference resolution"
+    ]
+  },
+  "dialog_capture_repair": "Explicit bounded selected-window region and pointer option; mock checks recorded separately, real Writer validation pending.",
+  "capture_verification": "2026-11-10: real owned Hermes/Writer private X11 fixed-window-region capture, real pointer and native save/PDF dialogs reviewed;31.5s native export,4cached narration cues reused. See VERIFICATION.md; no cross-platform or audio-route claim."
+}

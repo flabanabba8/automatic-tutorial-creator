@@ -3,8 +3,9 @@ import json
 import os
 import threading
 from pathlib import Path
-from .core import Director, sources
+from .core import Director, sources, window_pid, is_spreadsheet_grid, set_clipboard
 from .narration import narrate
+from . import gemini_speech
 
 
 _step_lock = threading.Lock()
@@ -14,7 +15,9 @@ TOOLS = {
         'display': {'type': 'string', 'description': 'Optional local X11 display, such as :0.'}}, []),
     'capture_start': ('Start recording one selected visible X11 window. Optionally route ONE explicitly selected audio stream into a temporary recording sink; playback is muted until recording stops. Recording stops automatically at max_seconds.', {
         'window_id': {'type': 'string', 'description': 'Hex window ID returned by capture_sources.'},
-        'display': {'type': 'string'}, 'max_seconds': {'type': 'number', 'minimum': 1, 'maximum': 600},
+        'display': {'type': 'string'}, 'max_seconds': {'type': 'number', 'minimum': 1, 'maximum': 1800},
+        'capture_mode': {'type': 'string', 'enum': ['window', 'window_region'], 'description': 'window records the selected drawable. Explicit window_region records its fixed on-screen rectangle, including dialogs/overlapping pixels inside it. Use a private display; keep unrelated windows/notifications away, and do not move/resize the selected window.'},
+        'show_cursor': {'type': 'boolean', 'description': 'Show the real pointer in the recording; useful for guided tutorials. Default false.'},
         'audio_stream': {'type': 'integer', 'minimum': 0, 'description': 'Optional exact audio stream ID returned by capture_sources; omitted means silent video.'}}, ['window_id']),
     'capture_status': ('Read recording state, media duration and step markers.', {'job_id': {'type': 'string'}}, ['job_id']),
     'capture_mark': ('Mark a demonstration step on the current media timeline, approximately half-second precision.', {
@@ -28,7 +31,7 @@ TOOLS = {
         'job_id': {'type': 'string'}, 'export_name': {'type': 'string'}}, ['job_id']),
     'tutorial_frame': ('Decode a frame at a requested export timestamp so the agent can inspect what actually appears before writing narration. Returns a local PNG path; no image model is called.', {
         'job_id': {'type': 'string'}, 'export_name': {'type': 'string'}, 'seconds': {'type': 'number', 'minimum': 0}}, ['job_id', 'export_name', 'seconds']),
-    'tutorial_narrate': ('Generate timestamped narration with your configured, already-running local Higgs TTS3 server and mix it into a completed export. Measures every clip, refuses overruns without speeding/cutting speech, caches unchanged cues, and writes segment captions plus the Boson credit. Does not start or install a model.', {
+    'tutorial_narrate': ('Generate timestamped narration and mix it into a completed export. Default route: Gemini 3.8 Flash TTS through your own Google Cloud login, one request per cue, a named voice (see capture_sources, speech section) and a spend guard; other routes are a configured local speech service or a host speech tool. Measures every clip, refuses overruns without speeding/cutting speech, caches unchanged cues, and writes segment captions plus the speech credit and usage. Does not start or install a model.', {
         'job_id': {'type': 'string'}, 'export_name': {'type': 'string'}, 'cues': {'type': 'array', 'minItems': 1, 'maxItems': 20,
             'items': {'type': 'object', 'properties': {'start': {'type': 'number'}, 'end': {'type': 'number'}, 'text': {'type': 'string', 'maxLength': 300}},
                       'required': ['start', 'end', 'text'], 'additionalProperties': False}}}, ['job_id', 'export_name', 'cues']),
@@ -44,16 +47,21 @@ def invoke(name, args, ctx=None, **kwargs):
     try:
         if name == 'capture_sources':
             result = sources(**args)
+            result['speech'] = {'selected_route': (lambda v: v if isinstance(v, str) and v else 'gemini')(ctx.get_config('narration_backend')), 'gemini': gemini_speech.availability(),
+                                'note': 'Choose a voice by name to fit the content (settings gemini_voice). One request per narration line; spend guard gemini_max_usd; no project value is shown.'}
         elif name == 'tutorial_narrate':
-            keys = ('higgs_url', 'higgs_model', 'higgs_voice', 'higgs_revision', 'higgs_reference_audio', 'higgs_reference_text')
+            keys = ('higgs_url', 'higgs_model', 'higgs_voice', 'higgs_revision', 'higgs_reference_audio', 'higgs_reference_text','narration_backend','host_tts_tool','host_tts_backend_id','host_tts_arguments','host_tts_model','host_tts_voice','host_tts_audio_field','host_tts_credit','host_tts_retry_nonce','speech_http_url','speech_http_model','speech_http_voice','speech_http_revision','speech_http_reference_audio','speech_http_reference_text','speech_http_credit','speech_http_fields','gemini_voice','gemini_model','gemini_max_usd','gemini_project')
             settings = {key: value for key in keys if (value := ctx.get_config(key)) is not None}
-            result = narrate(plugin_data_dir('automatic-tutorial-creator'), **args, settings=settings)
+            forwarded={k:kwargs[k] for k in ('parent_agent','session_id','task_id') if k in kwargs}
+            result = narrate(plugin_data_dir('automatic-tutorial-creator'), **args, settings=settings,dispatch=lambda tool,arguments:ctx.dispatch_tool(tool,arguments,**forwarded))
         elif name == 'tutorial_step':
             return step(ctx, Director(plugin_data_dir('automatic-tutorial-creator')), **args, **kwargs)
         else:
             director = Director(plugin_data_dir('automatic-tutorial-creator'))
             method = {'tutorial_timeline': 'timeline', 'tutorial_frame': 'frame'}.get(name, name.removeprefix('capture_'))
             result = getattr(director, method)(**args)
+        if name == 'capture_start' and isinstance(result, dict):
+            result['next'] = 'While this take records, perform every demonstrated action with tutorial_step (not computer_use directly) so each step is marked on the timeline and verified with a fresh capture.'
         return json.dumps(result)
     except (ValueError, TypeError, RuntimeError, OSError) as exc:
         return json.dumps({'error': str(exc)})
@@ -98,8 +106,23 @@ def _step(ctx, director, job_id, label, action, observe, **kwargs):
         raise ValueError('Action window ID must match the recorded window')
     if observe.get('pid') is not None and (type(observe['pid']) is not int or observe['pid'] < 1):
         raise ValueError('PID must be a positive integer')
+    converted = False
+    if action.get('action') == 'type' and is_spreadsheet_grid(request.get('display'), selected):
+        # Known limit: computer-use typing into a LibreOffice Calc grid makes the app grow until the
+        # system kills it. Paste from the clipboard instead; the paste key still needs approval.
+        set_clipboard(request.get('display'), action.get('text'))
+        action = {k: v for k, v in action.items() if k not in ('text', 'action')}
+        action.update(action='key', keys='ctrl+v')
+        converted = True
+    if action.get('action') == 'type' and not converted:
+        text = action.get('text') if isinstance(action.get('text'), str) else ''
+        if text.count('&&') > 1 or text.count(';') > 1 or '\n' in text.strip('\n') or len(text) > 110:
+            raise ValueError('A teaching step shows ONE short command or entry (one idea). Split this into separate tutorial_step calls: no chained && or ; lists, no embedded newlines, at most 110 characters')
     target = {'app': observe['app'], 'window_id': selected}
-    if observe.get('pid') is not None: target['pid'] = observe['pid']
+    # Hermes computer use targets a window only with both its process ID and window ID;
+    # without the pid it silently returns an empty capture. Use the window's own pid.
+    pid = observe.get('pid') if observe.get('pid') is not None else window_pid(request.get('display'), selected)
+    if pid is not None: target['pid'] = pid
     context = {k: kwargs[k] for k in ('parent_agent', 'task_id') if k in kwargs}
     context['session_id'] = session_id
     # Hermes input is delivered to a sticky target. Recapture the exact window
@@ -109,6 +132,8 @@ def _step(ctx, director, job_id, label, action, observe, **kwargs):
     except (TypeError, ValueError): return preflight
     if not isinstance(captured, dict) or captured.get('error') or captured.get('ok') is False or captured.get('mode') != 'ax':
         return preflight
+    if captured.get('width') == 0 or captured.get('height') == 0:
+        raise RuntimeError('Computer use could not target the recorded window (empty capture); no action was sent. Check that the application window is mapped, a window manager is running, and its pid matches the window')
     marker = director.mark(job_id, label)
     outcome = ctx.dispatch_tool('computer_use', {**action, 'app': observe['app']}, **context)
     try:
@@ -124,6 +149,7 @@ def _step(ctx, director, job_id, label, action, observe, **kwargs):
     if result.get('_multimodal') is True and isinstance(result.get('content'), list):
         # The host already captured a frame after the action; preserve it without a second capture.
         note = {'marker': marker, 'action_acknowledged': True, 'verification': 'Review this fresh observation before narrating success'}
+        if converted: note['pasted_instead_of_typed'] = 'Typing into a spreadsheet grid is refused; the text was pasted with ctrl+v. A multi-line paste opens the Text Import dialog: confirm it with Return.'
         summary = json.dumps({'tutorial_step': note})
         return {**result, 'content': [*result['content'], {'type': 'text', 'text': summary}],
                 'text_summary': (str(result.get('text_summary') or '') + '\n' + summary).strip()}
@@ -136,6 +162,7 @@ def _step(ctx, director, job_id, label, action, observe, **kwargs):
         return capture
     if isinstance(observed, dict):
         note = {'marker': marker, 'action_acknowledged': True, 'verification': 'Review this fresh observation before narrating success'}
+        if converted: note['pasted_instead_of_typed'] = 'Typing into a spreadsheet grid is refused; the text was pasted with ctrl+v. A multi-line paste opens the Text Import dialog: confirm it with Return.'
         if observed.get('_multimodal') is True and isinstance(observed.get('content'), list):
             # Keep native image blocks structured; never stringify image data into text.
             summary = json.dumps({'tutorial_step': note})

@@ -79,7 +79,7 @@ class Boundaries(unittest.TestCase):
             with patch('tutorial_test.narration.Director', return_value=director), patch('tutorial_test.narration.synthesize') as synthesis:
                 with self.assertRaisesRegex(ValueError, 'Private configuration'):
                     narrate(root/'plugin-data'/'automatic-tutorial-creator', 'id', 'demo.mp4',
-                            [{'start':0, 'end':2, 'text':'Hello'}], {'higgs_reference_audio':str(reference)})
+                            [{'start':0, 'end':2, 'text':'Hello'}], {'narration_backend':'higgs','higgs_reference_audio':str(reference)})
                 synthesis.assert_not_called()
 
     def test_resolved_remote_address_is_never_connected(self):
@@ -97,6 +97,78 @@ class Boundaries(unittest.TestCase):
                 package.step(ctx, director, 'id', 'Click', {'action': 'click'}, {'app': 'Demo', 'window_id': 123}, session_id='fixture-session')
         ctx.dispatch_tool.assert_not_called()
         director.job.assert_not_called()
+
+    def test_raise_window_is_best_effort(self):
+        from tutorial_test import core
+        with patch.object(core.shutil, 'which', return_value=None):
+            self.assertFalse(core.raise_window(':7', 123))
+        with patch.object(core.shutil, 'which', return_value='/usr/bin/xdotool'), patch.object(core, 'run', return_value='') as run:
+            self.assertTrue(core.raise_window(':7', 123))
+        self.assertEqual(run.call_args.args[0], ['/usr/bin/xdotool', 'windowraise', '123'])
+        with patch.object(core.shutil, 'which', return_value='/usr/bin/xdotool'), patch.object(core, 'run', side_effect=RuntimeError('x')):
+            self.assertFalse(core.raise_window(':7', 123))
+
+    def test_step_targets_window_with_its_own_pid_and_refuses_empty_capture(self):
+        with tempfile.TemporaryDirectory(dir='/tmp') as tmp, patch.dict('os.environ', {'DISPLAY': ':7'}):
+            Path(tmp, 'request.json').write_text(json.dumps({'display': ':7', 'window_id': 123}))
+            director = Mock()
+            director.job.return_value = Path(tmp)
+            director.status.return_value = {'state': 'recording'}
+            ctx = Mock()
+            action, target = {'action': 'key', 'key': 'ctrl+a'}, {'app': 'Demo', 'window_id': 123}
+            with patch.object(package, 'window_pid', return_value=4242):
+                ctx.dispatch_tool.side_effect = [json.dumps({'mode': 'ax', 'width': 10, 'height': 10}), json.dumps({'status': 'blocked'})]
+                package.step(ctx, director, 'id', 'Select all', action, target, session_id='fixture-session')
+                self.assertEqual(ctx.dispatch_tool.call_args_list[0].args[1]['pid'], 4242)
+                ctx.reset_mock(); director.reset_mock()
+                ctx.dispatch_tool.side_effect = [json.dumps({'mode': 'ax', 'width': 0, 'height': 0})]
+                with self.assertRaisesRegex(RuntimeError, 'could not target'):
+                    package.step(ctx, director, 'id', 'Select all', action, target, session_id='fixture-session')
+                self.assertEqual(ctx.dispatch_tool.call_count, 1)
+                director.mark.assert_not_called()
+                ctx.reset_mock()
+                ctx.dispatch_tool.side_effect = [json.dumps({'mode': 'ax', 'width': 10, 'height': 10}), json.dumps({'status': 'blocked'})]
+                package.step(ctx, director, 'id', 'Select all', action, {**target, 'pid': 77}, session_id='fixture-session')
+                self.assertEqual(ctx.dispatch_tool.call_args_list[0].args[1]['pid'], 77)
+
+    def test_type_into_spreadsheet_grid_is_pasted_instead(self):
+        with tempfile.TemporaryDirectory(dir='/tmp') as tmp, patch.dict('os.environ', {'DISPLAY': ':7'}):
+            Path(tmp, 'request.json').write_text(json.dumps({'display': ':7', 'window_id': 123}))
+            director = Mock(); director.job.return_value = Path(tmp); director.mark.return_value = {'seconds': 1, 'label': 'x'}
+            director.status.return_value = {'state': 'recording'}
+            ctx = Mock()
+            ctx.dispatch_tool.side_effect = [json.dumps({'mode': 'ax', 'width': 10, 'height': 10}), json.dumps({'ok': True}), json.dumps({'tree': 'ok'})]
+            with patch.object(package, 'is_spreadsheet_grid', return_value=True), patch.object(package, 'set_clipboard') as clip, patch.object(package, 'window_pid', return_value=5):
+                result = json.loads(package.step(ctx, director, 'id', 'Paste rows', {'action': 'type', 'text': 'a\tb\n'}, {'app': 'Calc', 'window_id': 123}, session_id='fixture-session'))
+            clip.assert_called_once_with(':7', 'a\tb\n')
+            sent = ctx.dispatch_tool.call_args_list[1].args[1]
+            self.assertEqual((sent['action'], sent['keys']), ('key', 'ctrl+v'))
+            self.assertNotIn('text', sent)
+            self.assertIn('pasted_instead_of_typed', result['tutorial_step'])
+            ctx.reset_mock()
+            ctx.dispatch_tool.side_effect = [json.dumps({'mode': 'ax', 'width': 10, 'height': 10}), json.dumps({'status': 'blocked'})]
+            with patch.object(package, 'is_spreadsheet_grid', return_value=False), patch.object(package, 'set_clipboard') as clip, patch.object(package, 'window_pid', return_value=5):
+                package.step(ctx, director, 'id', 'Type', {'action': 'type', 'text': 'hello'}, {'app': 'Editor', 'window_id': 123}, session_id='fixture-session')
+            clip.assert_not_called()
+            self.assertEqual(ctx.dispatch_tool.call_args_list[1].args[1]['text'], 'hello')
+
+    def test_teaching_step_refuses_chained_or_long_typed_lines(self):
+        with tempfile.TemporaryDirectory(dir='/tmp') as tmp, patch.dict('os.environ', {'DISPLAY': ':7'}):
+            Path(tmp, 'request.json').write_text(json.dumps({'display': ':7', 'window_id': 123}))
+            director = Mock(); director.job.return_value = Path(tmp); director.status.return_value = {'state': 'recording'}
+            ctx = Mock()
+            for text in ('a && b && c', 'a ; b ; c', 'one\ntwo', 'x' * 111):
+                with self.assertRaisesRegex(ValueError, 'ONE short command'):
+                    package.step(ctx, director, 'id', 'Chain', {'action': 'type', 'text': text}, {'app': 'XTerm', 'window_id': 123}, session_id='fixture-session')
+            ctx.dispatch_tool.assert_not_called()
+            director.mark.assert_not_called()
+
+    def test_export_name_accepts_path_or_name_without_extension(self):
+        from tutorial_test.core import clean_export_name
+        good = 'export-' + 'a' * 32
+        for given in (good + '.mp4', good, '/tmp/x/job/' + good + '.mp4', '/tmp/x/job/' + good):
+            self.assertEqual(clean_export_name(given), good + '.mp4')
+        self.assertEqual(clean_export_name(None), None)
 
     def test_native_computer_use_keeps_denial_and_context(self):
         with tempfile.TemporaryDirectory(dir='/tmp') as tmp, patch.dict('os.environ', {'DISPLAY': ':7'}):
@@ -199,7 +271,7 @@ class Media(unittest.TestCase):
             def log_message(self, *_): pass
         server = ThreadingHTTPServer(('localhost', 0), Server)
         thread = threading.Thread(target=server.serve_forever, daemon=True); thread.start()
-        settings = {'higgs_url': f'http://localhost:{server.server_port}'}
+        settings = {'narration_backend':'higgs','higgs_url': f'http://localhost:{server.server_port}'}
         cues = [{'start': .1, 'end': .8, 'text': 'First step.'}, {'start': 1.2, 'end': 2, 'text': 'Second step.'}]
         try:
             output = narrate(self.temp.name, self.job_id, Path(result['path']).name, cues, settings)

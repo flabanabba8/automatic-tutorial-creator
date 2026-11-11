@@ -7,7 +7,7 @@ import subprocess
 import sys
 import time
 
-from core import probe, run, write_json
+from core import probe, run, write_json, capture_input
 from process_env import process_env
 
 
@@ -52,9 +52,7 @@ def record(folder):
             run(['pactl', 'move-sink-input', str(selected['index']), sink_name])
             audio = ['-thread_queue_size', '512', '-f', 'pulse', '-i', sink_name + '.monitor']
         command = ['ffmpeg', '-hide_banner', '-loglevel', 'error', '-n', '-progress', str(folder / 'progress.txt'),
-                   '-f', 'x11grab', '-draw_mouse', '0', '-framerate', '30',
-                   '-video_size', f"{request['width']}x{request['height']}",
-                   '-window_id', str(request['window_id']), '-i', request['display'], *audio,
+                   *capture_input(request), *audio,
                    '-t', str(request['max_seconds']), '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2',
                    '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '20', '-pix_fmt', 'yuv420p']
         if audio:
