@@ -1,5 +1,7 @@
 # Automatic Tutorial Creator
 
+![Automatic Tutorial Creator: record it, cut it, narrate it](assets/thumbnail.jpg)
+
 Record one application window, mark the useful steps, and cut a checked demo
 under 90 seconds. Each take keeps its original recording and timestamp markers.
 
